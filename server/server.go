@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	htmlpkg "html"
 	"log"
 	"net/http"
 	"os"
@@ -13,12 +14,13 @@ import (
 	"github.com/gomarkdown/markdown"
 )
 
-func New(roots ...string) http.Handler {
-	return server{roots: roots}
+func New(showAll bool, roots ...string) http.Handler {
+	return server{showAll: showAll, roots: roots}
 }
 
 type server struct {
-	roots []string
+	showAll bool
+	roots   []string
 }
 
 func rootInfo(root, path string) (has bool, isDir bool, err error) {
@@ -27,8 +29,8 @@ func rootInfo(root, path string) (has bool, isDir bool, err error) {
 	if errors.Is(err, os.ErrNotExist) {
 		return false, false, nil
 	}
-	if err!=nil && strings.HasSuffix(err.Error(), "not a directory") {
-		return false, false, nil	
+	if err != nil && strings.HasSuffix(err.Error(), "not a directory") {
+		return false, false, nil
 	}
 	if err != nil {
 		return false, false, err
@@ -58,7 +60,7 @@ func (l lsError) Error() string {
 	return fmt.Sprintf("error listing dir %q: %s", l.dirName, l.err)
 }
 
-func (s server) getFilesAndDirs(resolvedPaths []string, isDir bool) (files, dirs []string, err error) {
+func (s server) getFilesAndDirs(resolvedPaths []string, urlPath string, isDir bool) (files, dirs []string, err error) {
 	ls := func(dir string) (fileS, dirS []string, err error) {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -71,11 +73,16 @@ func (s server) getFilesAndDirs(resolvedPaths []string, isDir bool) (files, dirs
 				fileS = append(fileS, de.Name())
 			}
 		}
+		if !s.showAll {
+			fileS = filter(fileS, func(p string) bool { return pathpkg.Ext(p) == ".md" })
+		}
 		return
 	}
 
 	if !isDir {
-		return ls(pathpkg.Dir(resolvedPaths[0]))
+		parent := pathpkg.Dir(urlPath)
+		resolvedPaths, _, _, _ := s.resolve(parent)
+		return s.getFilesAndDirs(resolvedPaths, parent, true)
 	}
 
 	if len(resolvedPaths) == 0 {
@@ -86,6 +93,7 @@ func (s server) getFilesAndDirs(resolvedPaths []string, isDir bool) (files, dirs
 	for _, path := range resolvedPaths {
 		fileS, dirS, lsErr := ls(path)
 		files = append(files, fileS...)
+
 		dirs = append(dirs, dirS...)
 		if lsErr != nil {
 			return nil, nil, lsErr
@@ -93,6 +101,16 @@ func (s server) getFilesAndDirs(resolvedPaths []string, isDir bool) (files, dirs
 	}
 
 	return
+}
+
+func filter[T any](x []T, f func(T) bool) []T {
+	var ret []T
+	for _, xs := range x {
+		if f(xs) {
+			ret = append(ret, xs)
+		}
+	}
+	return ret
 }
 
 // If we have `server{[]string{"/a", "/b"}}` and the path is "/hello.md", "/a/hello.md" is returned if that file exists and if not "/b/hello.md" is returned and if that doesn't exist, no path is returned
@@ -128,7 +146,6 @@ func (s server) resolve(path string) (resolvedPaths []string, exists bool, isDir
 	if !hasDir || (len(completions) == 1) {
 		return []string{completions[0].path}, true, completions[0].isDir, nil
 	}
-
 
 	if !hasFile || strings.HasSuffix(path, "/") {
 		for _, completion := range completions {
@@ -176,8 +193,13 @@ func (s server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !isDir && !s.showAll && pathpkg.Ext(r.URL.Path) != ".md" {
+		write(http.StatusBadRequest, "Request for file %q that is not markown. To turn off this filter, run the server with the -a or --all flag", r.URL.Path)
+		return
+	}
+
 	currentFolder := s.getCurrentFolder(r.URL.Path, isDir)
-	files, dirs, err := s.getFilesAndDirs(resolvedPaths, isDir)
+	files, dirs, err := s.getFilesAndDirs(resolvedPaths, r.URL.Path, isDir)
 
 	if err != nil {
 		write(http.StatusInternalServerError, "could not list files in directory: %q: %s", r.URL.Path, err)
@@ -191,12 +213,18 @@ func (s server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case isDir:
 		html, htmlErr = page.Dir(currentFolder, files, dirs)
 	default:
+
 		md, err := os.ReadFile(resolvedPaths[0] /* the only path */)
 		if err != nil {
 			write(http.StatusFailedDependency, "could not read file %q: %s", r.URL.Path, err)
 			return
 		}
-		html, htmlErr = page.File(currentFolder, pathpkg.Base(r.URL.Path), string(markdown.ToHTML(md, nil, nil)), files, dirs)
+
+		if pathpkg.Ext(r.URL.Path) != ".md" {
+			html, htmlErr = page.File(currentFolder, pathpkg.Base(r.URL.Path), fmt.Sprintf(`<pre style="white-space:pre-wrap">%s</pre>`, htmlpkg.EscapeString(string(md))), files, dirs)
+		} else {
+			html, htmlErr = page.File(currentFolder, pathpkg.Base(r.URL.Path), string(markdown.ToHTML(md, nil, nil)), files, dirs)
+		}
 	}
 
 	if htmlErr != nil {
