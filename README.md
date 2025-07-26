@@ -1,3 +1,5 @@
+[![Go Report Card](https://goreportcard.com/badge/benraz123/gonotes)](https://goreportcard.com/report/benraz123/gonotes) 
+
 # GoNotes
 
 ## What
