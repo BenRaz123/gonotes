@@ -1,4 +1,4 @@
-package main
+package page
 
 import (
 	"bytes"
@@ -42,17 +42,17 @@ func (p path) String() string {
 //go:embed template.html
 var tmpl string
 
-func newPageDataForDir(currentDir []string, files, dirs []string) pageData {
+func Dir(currentDir []string, files, dirs []string) ([]byte, error) {
 	return pageData{
 		CurrentDir: pathFromBuf(currentDir),
 
 		IsDir: true,
 		Files: files,
 		Dirs:  dirs,
-	}
+	}.render()
 }
 
-func newPageDataForFile(currentDir []string, currentFile, renderedMarkdown string, files, dirs []string) pageData {
+func File(currentDir []string, currentFile, renderedMarkdown string, files, dirs []string) ([]byte, error) {
 	return pageData{
 		CurrentDir:       pathFromBuf(currentDir),
 		CurrentFile:      currentFile,
@@ -61,10 +61,10 @@ func newPageDataForFile(currentDir []string, currentFile, renderedMarkdown strin
 		IsDir: false,
 		Files: files,
 		Dirs:  dirs,
-	}
+	}.render()
 }
 
-func (d pageData) Render() ([]byte, error) {
+func (d pageData) render() ([]byte, error) {
 	t, err := template.New("page").Funcs(template.FuncMap{"add": func(a, b int) int { return a + b }, "minus": func(a, b int) int { return a - b }}).Parse(tmpl)
 	if err != nil {
 		return nil, err
