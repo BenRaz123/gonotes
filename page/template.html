@@ -45,7 +45,7 @@
             <header>Directories<header>	
 			<ul>
 				<li><a href={{print $cDir ".."}}>..</a></li>
-				{{range .Dirs}}<li><a href={{print $cDir .}}>{{.}}</a></li>{{end}}
+				{{range .Dirs}}<li><a href={{print $cDir . "/"}}>{{.}}</a></li>{{end}}
 			</ul>
         </div>
         <div id="article">
