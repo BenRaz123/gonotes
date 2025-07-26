@@ -13,7 +13,7 @@ import (
 
 var CLI struct {
 	All         bool     `short:"a" name:"all" help:"show all"`
-	Address     string   `short:"A" name:"address" help:"what adress to use (ADDRESS[:PORT])" default:"localhost:8080"`
+	Address     string   `short:"A" name:"address" help:"what address to use (ADDRESS[:PORT])" default:"localhost:8080"`
 	Directories []string `short:"d" name:"directories" help:"directories to broadcast from"`
 }
 
